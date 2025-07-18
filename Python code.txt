@@ -1,0 +1,58 @@
+import pandas as pd
+import numpy as np
+import joblib
+import gradio as gr
+from sklearn.linear_model import LinearRegression
+
+data = pd.read_csv('TamilNadu_House_Price_Dataset.csv')
+data.columns = data.columns.str.strip().str.lower()
+data = data.dropna()
+
+data_encoded = pd.get_dummies(data, columns=['location'], drop_first=True)
+X = data_encoded.drop('price', axis=1)
+y = data_encoded['price']
+
+model = LinearRegression()
+model.fit(X, y)
+
+joblib.dump(model, 'house_price_prediction_model.pkl')
+joblib.dump(X.columns.tolist(), 'feature_columns.pkl')
+
+def predict_price(bhk, squarefeet, bathroom, balcony, location):
+    feature_columns = joblib.load('feature_columns.pkl')
+    input_dict = {
+        'bhk': bhk,
+        'squarefeet': squarefeet,
+        'bathroom': bathroom,
+        'balcony': balcony,
+    }
+    for col in feature_columns:
+        if col.startswith('location_'):
+            loc_name = col.replace('location_', '')
+            input_dict[col] = 1 if loc_name == location else 0
+    for col in feature_columns:
+        if col not in input_dict:
+            input_dict[col] = 0
+    input_df = pd.DataFrame([[input_dict[col] for col in feature_columns]], columns=feature_columns)
+    model = joblib.load('house_price_prediction_model.pkl')
+    prediction = model.predict(input_df)[0]
+    return f"Predicted House Price: ₹ {int(prediction):,} Cr"
+
+location_options = sorted(data['location'].unique())
+
+iface = gr.Interface(
+    fn=predict_price,
+    inputs=[
+        gr.Number(label="BHK"),
+        gr.Number(label="Square Feet"),
+        gr.Number(label="Number of Bathrooms"),
+        gr.Number(label="Number of Balconies"),
+        gr.Dropdown(choices=location_options, label="Location"),
+    ],
+    outputs="text",
+    title="House Price Predictor",
+    description="Enter house details to predict the price."
+)
+
+iface.launch()
+
